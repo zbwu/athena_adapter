@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,7 +45,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+CAN_FilterTypeDef sFilterConfig;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -56,7 +56,25 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+  while (HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0) > 0) {
+    sHubRxMsg.header.magic = 0x5aa5;
+    sHubRxMsg.header.tag = TAG_RX_MSG;
+    sHubRxMsg.header.length = sizeof(sHubRxMsg);
+    if (HAL_OK == HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &rxMsgHeader, sHubRxMsg.data)) {
+      sHubRxMsg.id = rxMsgHeader.IDE == CAN_ID_STD ? rxMsgHeader.StdId : rxMsgHeader.ExtId;
+      sHubRxMsg.ide = rxMsgHeader.IDE;
+      sHubRxMsg.dlc = rxMsgHeader.DLC;
+      CDC_Transmit_HS((uint8_t *)&sHubRxMsg, sizeof(sHubRxMsg));
+    }
+    // send error
+  }
+}
 
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
+{
+}
 /* USER CODE END 0 */
 
 /**
@@ -91,17 +109,32 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+  sFilterConfig.FilterIdHigh = 0x0000;
+  sFilterConfig.FilterIdLow = 0x0000;
+  sFilterConfig.FilterMaskIdHigh = 0x0000;
+  sFilterConfig.FilterMaskIdLow = 0x0000;
+  sFilterConfig.FilterFIFOAssignment = 0U;
+  sFilterConfig.FilterBank = 0U;
+  sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+  sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+  sFilterConfig.FilterActivation = CAN_FILTER_ENABLE;
+  sFilterConfig.SlaveStartFilterBank = 14;
 
+  HAL_CAN_ConfigFilter(&hcan1, &sFilterConfig);
+  HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_ERROR);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  HAL_CAN_Start(&hcan1);
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    HAL_Delay(1000);
   }
+  HAL_CAN_Stop(&hcan1);
   /* USER CODE END 3 */
 }
 

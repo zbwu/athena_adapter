@@ -51,7 +51,10 @@
 #define APP_RX_DATA_SIZE  2048
 #define APP_TX_DATA_SIZE  2048
 /* USER CODE BEGIN EXPORTED_DEFINES */
-
+#define TAG_MSG     0x01
+#define TAG_ERROR   0x02
+#define TAG_RX_MSG  0x11
+#define TAG_TX_MSG  0x12
 /* USER CODE END EXPORTED_DEFINES */
 
 /**
@@ -64,6 +67,39 @@
   */
 
 /* USER CODE BEGIN EXPORTED_TYPES */
+typedef struct
+{
+  uint16_t magic; // 5A A5
+  uint8_t tag;
+  uint8_t length;
+} __attribute__((packed)) HubHeaderTypeDef;
+
+typedef struct
+{
+  HubHeaderTypeDef header;
+  uint16_t status;
+  uint16_t buffer[8];
+} __attribute__((packed)) HubStatusTypeDef;
+
+typedef struct
+{
+  HubHeaderTypeDef header;
+  uint32_t id;
+  uint8_t ide;
+  uint8_t dlc;
+  uint8_t padding[2];
+  uint8_t data[8];
+} __attribute__((packed)) HubTxMsgTypeDef;
+
+typedef struct
+{
+  HubHeaderTypeDef header;
+  uint32_t id;
+  uint8_t ide;
+  uint8_t dlc;
+  uint8_t padding[2];
+  uint8_t data[8];
+} __attribute__((packed)) HubRxMsgTypeDef;
 
 /* USER CODE END EXPORTED_TYPES */
 
@@ -93,7 +129,10 @@
 extern USBD_CDC_ItfTypeDef USBD_Interface_fops_HS;
 
 /* USER CODE BEGIN EXPORTED_VARIABLES */
-
+extern CAN_TxHeaderTypeDef txMsgHeader;
+extern CAN_RxHeaderTypeDef rxMsgHeader;
+extern HubTxMsgTypeDef sHubTxMsg;
+extern HubRxMsgTypeDef sHubRxMsg;
 /* USER CODE END EXPORTED_VARIABLES */
 
 /**

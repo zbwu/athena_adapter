@@ -22,7 +22,8 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include "can.h"
+#include "crc.h"
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -110,7 +111,10 @@ uint8_t UserTxBufferHS[APP_TX_DATA_SIZE];
 extern USBD_HandleTypeDef hUsbDeviceHS;
 
 /* USER CODE BEGIN EXPORTED_VARIABLES */
-
+CAN_TxHeaderTypeDef txMsgHeader;
+CAN_RxHeaderTypeDef rxMsgHeader;
+HubTxMsgTypeDef sHubTxMsg;
+HubRxMsgTypeDef sHubRxMsg;
 /* USER CODE END EXPORTED_VARIABLES */
 
 /**
@@ -264,8 +268,44 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceHS, UserRxBufferHS);
   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+
+  HubHeaderTypeDef *hdr = (HubHeaderTypeDef *)UserRxBufferHS;
+
+  if (hdr->tag == TAG_TX_MSG && hdr->length == sizeof(HubTxMsgTypeDef)) {
+
+    // check crc32
+    uint32_t *crc32 = (uint32_t *)(UserRxBufferHS + sizeof(HubTxMsgTypeDef));
+    if (*crc32 != 0) {
+      uint32_t value = HAL_CRC_Calculate(&hcrc, (uint32_t *)UserRxBufferHS, sizeof(HubTxMsgTypeDef) / 4);
+      if (value != *crc32) {
+        //send error
+        return (USBD_OK);
+      }
+    }
+
+    memcpy((uint8_t *)&sHubTxMsg, UserRxBufferHS, sizeof(HubTxMsgTypeDef));
+    uint32_t mailbox = 0;
+
+    if (sHubTxMsg.ide == CAN_ID_STD) {
+      txMsgHeader.StdId = sHubTxMsg.id;
+      txMsgHeader.ExtId = 0;
+      txMsgHeader.IDE = CAN_ID_STD;
+    } else {
+      txMsgHeader.StdId = 0;
+      txMsgHeader.ExtId = sHubTxMsg.id;
+      txMsgHeader.IDE = CAN_ID_EXT;
+    }
+    txMsgHeader.RTR = CAN_RTR_DATA;
+    txMsgHeader.DLC = sHubTxMsg.dlc;
+    txMsgHeader.TransmitGlobalTime = DISABLE;
+    
+    HAL_CAN_AddTxMessage(&hcan1, &txMsgHeader, sHubTxMsg.data, &mailbox);
+  } else if (hdr->tag == TAG_MSG) {
+    CDC_Transmit_HS((uint8_t *)hdr, sizeof(HubHeaderTypeDef));
+  }
+
   return (USBD_OK);
   /* USER CODE END 11 */
 }
@@ -285,7 +325,14 @@ uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len)
   if (hcdc->TxState != 0){
     return USBD_BUSY;
   }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceHS, Buf, Len);
+
+  memcpy(UserTxBufferHS, Buf, Len);
+
+  // add crc32 to end of package
+  uint32_t *crc32 = (uint32_t *)(UserTxBufferHS + Len);
+  *crc32 = HAL_CRC_Calculate(&hcrc, (uint32_t *)UserTxBufferHS, Len / 4);
+
+  USBD_CDC_SetTxBuffer(&hUsbDeviceHS, UserTxBufferHS, Len + 4);
   result = USBD_CDC_TransmitPacket(&hUsbDeviceHS);
   /* USER CODE END 12 */
   return result;
